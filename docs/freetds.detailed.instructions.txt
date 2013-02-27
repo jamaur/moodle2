@@ -1,0 +1,110 @@
+These instructions were written using CentOS 5.5 - 64-bit
+
+Everything here is as root.
+
+First, make sure the "gnutls-devel" package is installed (it might be called "libgnutls-dev" on debian-based systems).
+
+yum install gnutls-devel
+
+Now, download and compile freetds.
+
+cd /usr/local/src
+wget ftp://ftp.ibiblio.org/pub/Linux/ALPHA/freetds/current/freetds-current.tgz
+tar xvzf freetds-current.tgz
+cd freetds-0.83.dev*
+./configure --prefix=/usr/local/freetds --with-tdsver=8.0 --enable-msdblib --enable-dbmfix --with-gnu-ld --with-gnutls --libdir=/usr/local/freetds/lib64
+make -j3
+make install
+
+The freetds.conf file is located in /usr/local/freetds/etc/freetds.conf. That is where you can setup a connection. Here's a sample section:
+
+[ClaraTest]
+	host = your-clara-host.ca
+	port = 1433
+	tds version = 8.0
+
+Now, let's test! Make sure skytech is allowing connections from the machine you are on (on port 1433).
+
+cd /usr/local/freetds/bin
+./tsql -S <servername> -U <user> -P <pass>
+
+Where "<servername>" is the name you used in the freetds.conf file--in this case, it's "ClaraTest".
+
+If you can connect, you will see output like the following:
+
+locale is "en_US.UTF-8"
+locale charset is "UTF-8"
+using default charset "UTF-8"
+1>
+
+Type "quit" to exit.
+
+Now, we have to compile PHP with mssql support using the freetds that we just compiled.
+
+I had to install some dev packages. You may or may not need to install more than this, depending on './configure' or 'make' errors:
+
+yum install unixODBC-devel.x86_64
+yum install pcre-devel.x86_64
+yum install aspell-devel
+yum install libmcrypt-devel
+yum install libtool-ltdl-devel.x86_64
+yum install httpd-devel.x86_64
+yum install libxml2-devel.x86_64
+yum install openssl-devel.x86_64
+yum install bzip2-devel.x86_64
+yum install curl-devel.x86_64
+yum install libjpeg-devel.x86_64 libpng-devel.x86_64 freetype-devel.x86_64 gmp-devel.x86_64 libmcrypt-devel mysql-devel
+
+Go to php.net and download whatever version of PHP you want (>= 5.2.6). I downloaded the latest stable 5.2 version (5.2.13).
+
+Because I'm compiling on a 64-bit machine, I had to use --with-libdir=lib64. Note also that the freetds ./configure command has "--libdir=/usr/local/freetds/lib64" passed to it. These should both be consistent.
+
+I ran phpinfo() to see the configure command, and modified accordingly.
+
+I also ran "rpm -qa | grep -i php" to see what php modules I had installed so that I could compile them into PHP.
+
+php-5.1.6-27.el5
+php-pdo-5.1.6-27.el5
+php-ldap-5.1.6-27.el5
+php-mcrypt-5.1.6-15.el5.centos.1
+php-cli-5.1.6-27.el5
+php-mysql-5.1.6-27.el5
+php-mssql-5.1.6-15.el5.centos.1
+php-common-5.1.6-27.el5
+php-xmlrpc-5.1.6-27.el5
+php-mbstring-5.1.6-27.el5
+php-odbc-5.1.6-27.el5
+php-gd-5.1.6-27.el5
+
+I had to further modify the ./configure command returned by phpinfo() -- it had "--without-mysql", for example, which I clearly want. Just make sure you compile in all the php modules that you have installed.
+
+The final, working (for me) ./configure command for PHP 5.2.13 compilation:
+
+'./configure' '--with-libdir=lib64' '--with-config-file-scan-dir=/usr/local/etc/php.d' '--disable-debug' '--with-pic' '--disable-rpath' '--without-pear' '--with-bz2' '--with-curl' '--with-exec-dir=/usr/bin' '--with-freetype-dir=/usr' '--with-png-dir=/usr' '--enable-gd-native-ttf' '--without-gdbm' '--with-gettext' '--with-gmp' '--with-iconv' '--with-jpeg-dir=/usr' '--with-openssl' '--with-pspell' '--with-pcre-regex=/usr' '--with-zlib' '--with-layout=GNU' '--enable-exif' '--enable-ftp' '--enable-magic-quotes' '--enable-sockets' '--enable-sysvsem' '--enable-sysvshm' '--enable-sysvmsg' '--enable-wddx' '--with-kerberos' '--enable-ucd-snmp-hack' '--with-unixODBC=/usr' '--enable-shmop' '--enable-calendar' '--with-mime-magic=/usr/share/file/magic.mime' '--without-sqlite' '--with-libxml-dir=/usr' '--with-mysql' '--with-mssql=/usr/local/freetds' '--with-gd' '--disable-dom' '--disable-dba' '--with-pdo-dblib=/usr/local/freetds' --with-pdo-mysql --with-pdo-sqlite --with-pdo-odbc=unixODBC,/usr --with-ldap --with-mcrypt --with-xmlrpc --enable-mbstring --with-apxs2
+
+You might receive a warning about "something" not working and to check the debug.log file. If you check that file and see that the libsybdb.so.5 file could not be found, link the libsybdb.so.5 file from the /usr/local/freetds/lib/ directory to the /usr/lib directory. (If using "lib64", adjust as necessary):
+
+ln -s /usr/local/freetds/lib/libsybdb.so.5 /usr/lib/libsybdb.so.5
+
+After a successful "./configure", compile, install, and restart apache.
+
+make -j4
+make install
+libtool --finish /usr/local/src/php-5.2.14/libs  --> (not sure what this does--but the PHP "make install" command told me to do this after it finished)
+/etc/init.d/httpd restart
+
+At this point you should blacklist all things php from being updated in /etc/yum.conf:
+
+exclude=... php* ....
+
+You should also put any php.ini changes you made in /etc/php.ini into /usr/local/etc/php.ini (I just copied /etc/php.ini to /usr/local/etc/php.ini)
+
+IMPORTANT: If you think everything is kosher and want to remove the version of PHP that yum installed, make sure to copy the /etc/httpd/conf.d/php.conf file (which has the AddModule, AddHandler directives that make PHP work properly in it) to a different file, as "yum remove php" will remove this file, and apache will stop serving .php files properly. If you don't, apache will serve up your .php files in plain text.
+
+In addition, I believe "yum remove php" also deletes the libphp5.so file off the system, so you should go back to the /usr/local/src/php-* folder and run "make install" again so that the new libphp5.so file is restored.
+
+cp /etc/httpd/conf.d/php.conf /etc/httpd/conf.d/php.backup.conf
+yum remove php
+mv /etc/httpd/conf.d/php.backup.conf /etc/httpd/conf.d/php.conf (Not necessary, but we should keep filenames proper.)
+/etc/init.d/httpd restart
+
