@@ -714,7 +714,7 @@ class assign_grading_table extends table_sql implements renderable {
         }
 
         if ($this->is_downloading()) {
-            $o = strip_tags(str_replace('</div>', "\n", $o));
+            $o = trim(strip_tags(str_replace('</div>', " ", $o)));
         }
 
         return $o;
